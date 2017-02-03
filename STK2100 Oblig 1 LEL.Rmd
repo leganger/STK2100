@@ -1,0 +1,53 @@
+---
+title: "STK2100 Obligatorisk oppgave 1 av 2"
+author: "Lars Erlend Leganger"
+date: "3 februar 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Oppgave 1
+
+
+```{r boston}
+library ( MASS )
+data ( Boston )
+help ( Boston )
+
+library(cowplot)
+
+# Distribution plots
+d <- list(rep(NULL,ncol(Boston)))
+for (i in 1:ncol(Boston)) {
+  d[[i]] <-ggplot(Boston, aes_string(colnames(Boston)[i])) +
+           geom_histogram(aes(y=..density..),
+                          binwidth=.5,
+                          colour="black",
+                          fill="white") +
+           geom_density(alpha=.2,fill="#FF6666") +
+           theme(text = element_text(size = 10),
+                 axis.text.x = element_text(size=5),
+                 axis.text.y = element_text(size=5))
+}
+
+plot_grid(plotlist=d, ncol = 2)
+
+# Boxplots
+b <- list(rep(NULL,ncol(Boston)))
+for (i in 1:ncol(Boston)) {
+  b[[i]] <-ggplot(Boston, aes(x=colnames(Boston)[i],y=substitute(colnames(Boston)[i])) +
+           geom_boxplot() +
+           #geom_jitter(shape=16, position=position_jitter(0.2)) +
+           theme(text = element_text(size = 10),
+                 axis.text.x = element_text(size=5),
+                 axis.text.y = element_text(size=5))
+}
+plot_grid(plotlist=b, ncol = 3)
+
+# Grid with scatterplots
+
+```
+
