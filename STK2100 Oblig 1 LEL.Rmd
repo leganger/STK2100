@@ -5,22 +5,27 @@ date: "3 februar 2017"
 output: html_document
 ---
 
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Oppgave 1
+### a)
+```{r boston distributions, fig.width=8, fig.height=11}
 
-
-```{r boston}
 library ( MASS )
+library(cowplot)
+library(reshape2)
+library(data.table)
+
 data ( Boston )
 help ( Boston )
 
-library(cowplot)
+Boston.melt <- data.table(melt(Boston))
 
 # Distribution plots
-d <- list(rep(NULL,ncol(Boston)))
+d <- list(rep(NA,ncol(Boston)))
 for (i in 1:ncol(Boston)) {
   d[[i]] <-ggplot(Boston, aes_string(colnames(Boston)[i])) +
            geom_histogram(aes(y=..density..),
@@ -32,22 +37,209 @@ for (i in 1:ncol(Boston)) {
                  axis.text.x = element_text(size=5),
                  axis.text.y = element_text(size=5))
 }
-
 plot_grid(plotlist=d, ncol = 2)
 
 # Boxplots
-b <- list(rep(NULL,ncol(Boston)))
+b <- list(rep(NA,ncol(Boston)))
 for (i in 1:ncol(Boston)) {
-  b[[i]] <-ggplot(Boston, aes(x=colnames(Boston)[i],y=substitute(colnames(Boston)[i])) +
+plot.df <- Boston.melt[variable==colnames(Boston)[i]]
+  b[[i]] <-ggplot(plot.df, aes(x=variable,y=value)) +
            geom_boxplot() +
-           #geom_jitter(shape=16, position=position_jitter(0.2)) +
+           geom_jitter(shape=16, position=position_jitter(0.1)) +
            theme(text = element_text(size = 10),
-                 axis.text.x = element_text(size=5),
-                 axis.text.y = element_text(size=5))
+                 axis.text.x = element_text(size=7),
+                 axis.text.y = element_text(size=7)) +
+           xlab("") +
+           ylab("")
 }
-plot_grid(plotlist=b, ncol = 3)
-
-# Grid with scatterplots
+plot_grid(plotlist=b, ncol = 7)
 
 ```
+
+``` {r correlations}
+library(corrplot)
+corrplot(cor(Boston),method="circle")
+```
+
+### b)
+``` {r split}
+set.seed (345)
+ind <- sample(1:nrow(Boston),250,replace=FALSE)
+Boston.train  <- Boston[ ind , ]
+Boston.test   <- Boston[-ind , ]
+```
+
+Ved å sette til side testdata som holdes utenfor i modellbyggefasen får vi muligheten til å teste treffsikkerheten til modellene vi bygger uten å hente inn nye data. Dette er bla. nyttig for å unngå overtilpasning. En ulempe er at vi får mindre data tilgjengelig i modellbyggefasen.
+
+### c)
+De vanligste antagelsene på støyleddene i en lineærregresjon er at de 1) ikke korrelerer, 2) har konstant varians, 3) er normalfordelt.
+
+**Hvilke antagelser er viktigst?**
+
+
+
+```{r lm}
+Boston.lm <- lm(formula=as.formula(paste0("crim ~",paste(colnames(Boston)[-1],collapse="+"))), data=Boston.train)
+summary(Boston.lm)
+```
+
+Etter første blikk ser det ut til at *dis*, *rad*, og *medv* er de mest lovende variablene for å predikere *crim*.
+
+### d) & e)
+```{r}
+remove.list <- 1
+p <- 1
+
+while (p > 0.05 ) {
+  Boston.lm <- lm(formula=as.formula(paste0("crim ~",paste(colnames(Boston)[-remove.list],collapse="+"))),
+                  data=Boston.train)
+
+  p <- sort(coef(summary(Boston.lm))[,4], decreasing = T)[1]
+
+  remove.list <- append(remove.list,
+                        which(colnames(Boston.train)==names(sort(coef(summary(Boston.lm))[,4], decreasing = T))[1]))
+}
+
+```
+
+Med korrelerte forklaringsvariabler vil signifikansen som regel "deles" mellom variablene. Ved å trinnvis fjerne den svakeste forklaringsvariabelen sikrer vi at de øvrige forklaringsvariablene får riktigere signifikansestimater, og vi unngår å fjerne variabler som var tilsynelatende insignifikante pga. korrelasjoner med andre forklaringsvariabler. I dette tilfellet fører den stegvise fjerningsprosessen til at vi beholder *zn*, selv om denne ved første blikk så ut til å være insignifikant.
+
+```{r lm plots}
+plot(Boston.lm)
+```
+
+**Diskusjon av plott**
+http://stats.stackexchange.com/questions/76226/interpreting-the-residuals-vs-fitted-values-plot-for-verifying-the-assumptions
+
+http://stats.stackexchange.com/questions/52089/what-does-having-constant-variance-in-a-linear-regression-model-mean/52107#52107 
+
+http://stats.stackexchange.com/questions/52212/qq-plot-does-not-match-histogram/52221#52221
+
+http://stats.stackexchange.com/questions/58141/interpreting-plot-lm
+
+
+### f)
+```{r predict}
+Boston.pred <- predict(Boston.lm,newdata=Boston.test)
+sum((Boston.pred - Boston.test$crim)^2)/nrow(Boston.test)
+```
+
+PS. Siden *crim* kun har positive verdier kan det være interessant å prøve en loglineær regresjon:
+
+```{r}
+Boston.train$logcrim <- log(Boston.train$crim)
+Boston.test$logcrim <- log(Boston.test$crim)
+
+remove.list <- c(1,15)
+p <- 1
+
+while (p > 0.05 ) {
+  Boston.loglm <- lm(formula=as.formula(paste0("logcrim ~",paste(colnames(Boston)[-remove.list],collapse="+"))),
+                  data=Boston.train)
+
+  p <- sort(coef(summary(Boston.loglm))[,4], decreasing = T)[1]
+
+  remove.list <- append(remove.list,
+                        which(colnames(Boston.train)==names(sort(coef(summary(Boston.loglm))[,4], decreasing = T))[1]))
+}
+
+Boston.pred.loglm <- exp(predict(Boston.loglm,newdata=Boston.test))
+sum((Boston.pred.loglm - Boston.test$crim)^2)/nrow(Boston.test)
+```
+
+
+### g)
+```{r lm cont}
+remove.list <- 1
+p <- 1
+
+while (p > 0.05 ) {
+  Boston.full.lm <- lm(formula=as.formula(paste0("crim ~",paste(colnames(Boston)[-remove.list],collapse="+"))),
+                  data=Boston)
+
+  p <- sort(coef(summary(Boston.full.lm))[,4], decreasing = T)[1]
+
+  remove.list <- append(remove.list,
+                        which(colnames(Boston)==names(sort(coef(summary(Boston.full.lm))[,4], decreasing = T))[1]))
+}
+
+summary(Boston.full.lm)
+```
+
+Ved å inkludere hele datasettet i modellbyggeprosessen finner vi grunnlag for å inkludere flere variabler. Vi har imidlertid mistet muligheten til å teste modellens treffsikkerhet på uavhengige data, og risikerer å konkludere med en overtilpasset modell.
+
+
+## Oppgave 2
+### a)
+Prediksjonen for observasjon $c_i$ får kun bidrag fra det ene $x_{i,j}$-leddet som oppfyller $c_i = j$. Vi kan bake konstantleddet $\beta_0$ inn i de øvrige parameterverdiene for denne variabelen: $\alpha_j = \beta_j + \beta_0$.
+
+$\beta_i$ er differansen mellom prediksjonen for $c_i$ og for $c_1$. $\alpha_i$ er prediksjonen for $c_i$.
+
+### b)
+$(\bf{X}^T\bf{X})_{ij} = \sum_{k}^n x_{k,i}\cdot x_{k,j}$
+$x_{k,i}\cdot x_{k,j} = 0$ for $i \neq j$
+$(\bf{X}^T\bf{X})_{i=j} = \sum_{k}^n x_{k,j} = n_j$
+
+$(\bf{X}^T\bf{y})_{i} = \sum_{k}^n x_{k,i}\cdot y_{i} = \sum_{i:c_i=j}\bf{y}_j$
+
+$\bf{Y} = \bf{X}\boldsymbol{\alpha} + \boldsymbol{\epsilon}$
+$\bf{X}^T\bf{Y} = \bf{X}^T\bf{X}\boldsymbol{\alpha} + \bf{X}^T\boldsymbol{\epsilon}$
+$\bf{X}^T\bf{Y}_j = n_j \alpha_j + \bf{X}^T\boldsymbol{\epsilon}$
+
+Minste kvadraters estimater for gir $\alpha_j =  \frac{\sum_{i:c_i=j}\bf{y}_j}{n_j}$, i.e. $\alpha_j$ er gjennomsnittet av $y$ for observasjoner med $c_j$.
+
+### c)
+$\beta$ og $\alpha$ modellene er ekvivalente under en lineærtransformasjon. Verdiene av $\alpha$ som minimerer gjennomsnittlig kvadratisk feil for $\alpha$-modellen kan lineærtransformeres til $\beta$-verdiene som minimerer gjennomsnittlig kvadratisk feil for $\beta$-modellen ved $\beta_j = \alpha_j - \beta_0 = \alpha_j - \alpha_1$.
+
+### d)
+$\hat{\alpha} = \sum_j^n \alpha_j / n$
+$\gamma_j = \alpha_j - \hat{\alpha}$
+$\sum_j^n \gamma_j = \sum_j^n\alpha_j - \hat{\alpha}\cdot n = 0$
+
+I denne (ekvivalente) modellen er $\gamma_j$ avviket fra gjennomsnittet for $c_j$.
+
+### e)
+```{r Fe}
+Fe <- read.table("http://www.uio.no/studier/emner/matnat/math/STK2100/v17/fe.txt", header=T, sep=",")
+
+fit1 <- lm(Fe~form+0,data=Fe)
+summary(fit1)
+
+Fe$form <- as.factor(Fe$form)
+fit2 <- lm(Fe~form+0,data=Fe)
+summary(fit2)
+```
+
+I *fit1* antas en lineær sammenheng mellom verdien til indeks-variabelen *form* $\in \{1,4\}$ og jerninnholdet *Fe*; dvs. at type 4 har dobbelt så mye Fe som type 2 som har dobbelt så mye Fe som type 1. Men vi har ikke noe grunnlag for å anta en slik sammenheng; vi kunne f.eks. like gjerne indeksert typene 1001, 1002, 1003, og 1004! Ved å redefinere *type* som faktor sørger vi for at *lm* behandler *type* som en kategorisk variabel, og de forskjellige typene blir ikke påtvunget noen lineær sammenheng.
+
+Det er ingen intercept-koefficient i *Summary(fit2)*, dette betyr at *fit2* er en $\alpha$-tilpasning.
+
+### f)
+```{r}
+options(contrasts=c("contr.SAS","contr.SAS"))
+fit2 <- lm(Fe~form,data=Fe)
+summary(fit2);
+
+options(contrasts=c("contr.sum","contr.sum"))
+options()$contrasts
+fit3 <- lm(Fe~form,data=Fe)
+summary(fit3)
+```
+*fit3* er $\gamma%-tilpasning.
+
+### g)
+Hypotese: Dersom det er signifikant forskjell mellom de forskjellige jernformasjonene vil vi finne signifikante parametre for de kategoriske variablene ved $\beta$-modellering. Basert på *summary(fit2)* konkluderer vi at typene 1, 2 og 3 skiller seg signifikant fra 4 og hverandre.
+
+### h)
+Basert på *fit3* er det begrenset forskjell mellom type 3 og type 4. En mulig forenkling av modellen er dermed å slå sammen type 3 og 4 i en felles kategori:
+```{r}
+Fe <- data.table(Fe)
+options(contrasts=c("contr.SAS","contr.SAS"))
+Fe$form <- factor(Fe$form, levels=append(levels(Fe$form),"3&4"))
+Fe <- Fe[form %in% c("3","4"), form := "3&4"]
+fit4 <- lm(Fe~form,data=Fe)
+summary(fit4)
+```
+
+
 
